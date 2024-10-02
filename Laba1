@@ -1,0 +1,106 @@
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.model_selection import train_test_split
+
+# Завантаження даних
+data = pd.read_csv('D:/download/dataset_1.csv')
+print("Дані завантажено:")
+print(data.head())
+
+# Вибір ознак та цільової змінної
+X = data[['feature_1', 'feature_2', 'feature_3']].values
+y = data['target'].values
+
+# Розділ даних на навчальну та тестову вибірки
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Функція для створення моделі
+def create_model(layers, hidden_neurons, activation_function):
+    model = nn.Sequential()
+    input_size = X_train.shape[1]
+    
+    for i in range(layers):
+        if i == 0:
+            model.add_module(f'layer_{i}', nn.Linear(input_size, hidden_neurons[i]))
+        else:
+            # Переконайтеся, що i-1 є в межах списку hidden_neurons
+            model.add_module(f'layer_{i}', nn.Linear(hidden_neurons[i-1], hidden_neurons[i]))
+
+        # Додаємо функцію активації
+        if activation_function == 'ReLU':
+            model.add_module(f'activation_{i}', nn.ReLU())
+        elif activation_function == 'Tanh':
+            model.add_module(f'activation_{i}', nn.Tanh())
+
+    # Додаємо вихідний шар
+    output_size = 1  # Вихідний шар для регресії
+    model.add_module('output', nn.Linear(hidden_neurons[-1], output_size))
+    
+    return model
+
+
+# Параметри для гіперпараметричного пошуку
+layers_options = [2, 3]
+hidden_neurons_options = [
+    [64, 64],  # 2 layers, both with 64 neurons
+    [128, 64],  # 2 layers, first with 128, second with 64 neurons
+    [64, 32],   # 3 layers, [64, 32, output]
+    [128, 64]   # 3 layers, [128, 64, output]
+]
+
+activation_functions = ['ReLU', 'Tanh']
+learning_rates = [0.001, 0.0001]
+
+results = []
+
+# Пошук гіперпараметрів
+for layers in layers_options:
+    for hidden_neurons in hidden_neurons_options:
+        for activation_function in activation_functions:
+            for learning_rate in learning_rates:
+                print(f'Training model with {layers} layers, {hidden_neurons} neurons, {activation_function} activation, learning rate {learning_rate}')
+                
+                # Створення моделі
+                model = create_model(layers, hidden_neurons, activation_function)
+                criterion = nn.MSELoss()
+                optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+                # Перетворення даних на тензори
+                X_tensor = torch.FloatTensor(X_train)
+                y_tensor = torch.FloatTensor(y_train).view(-1, 1)
+
+                # Тренування моделі
+                for epoch in range(100):  # Кількість епох (можна регулювати)
+                    model.train()
+                    optimizer.zero_grad()
+                    outputs = model(X_tensor)
+                    loss = criterion(outputs, y_tensor)
+                    loss.backward()
+                    optimizer.step()
+
+                # Оцінка моделі
+                model.eval()
+                with torch.no_grad():
+                    test_tensor = torch.FloatTensor(X_test)
+                    predictions = model(test_tensor)
+                    test_loss = criterion(predictions, torch.FloatTensor(y_test).view(-1, 1)).item()
+                
+                results.append({
+                    'layers': layers,
+                    'hidden_neurons': hidden_neurons,
+                    'activation_function': activation_function,
+                    'learning_rate': learning_rate,
+                    'final_loss': test_loss
+                })
+
+# Перетворення результатів у DataFrame
+results_df = pd.DataFrame(results)
+print(results_df)
+
+# Висновки
+best_result = results_df.loc[results_df['final_loss'].idxmin()]
+print("Оптимальна архітектура:")
+print(best_result)
